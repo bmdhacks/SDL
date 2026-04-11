@@ -890,27 +890,27 @@ static bool GLES_ClaimWindow_WithGLInit(SDL_GPURenderer *driverData, SDL_Window 
 
     /* Load GL functions on first claim (we need a current context) */
     if (!renderer->glClear) {
-        /* Create a temporary GL context if the window doesn't have one */
-        SDL_GLContext ctx = SDL_GL_GetCurrentContext();
-        bool created_ctx = false;
+        /* Set GL attributes for GLES before loading library or creating context */
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 
+        /* Load the GL library through the video driver */
+        if (!SDL_GL_LoadLibrary(NULL)) {
+            return SDL_SetError("GLES GPU: Failed to load GL library: %s", SDL_GetError());
+        }
+
+        /* Add OPENGL flag to the window so SDL3 allows GL context creation */
+        window->flags |= SDL_WINDOW_OPENGL;
+
+        /* Create GL context */
+        SDL_GLContext ctx = SDL_GL_CreateContext(window);
         if (!ctx) {
-            /* Need to set GL attributes for GLES */
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-
-            ctx = SDL_GL_CreateContext(window);
-            if (!ctx) {
-                return SDL_SetError("GLES GPU: Failed to create GL context: %s", SDL_GetError());
-            }
-            created_ctx = true;
+            return SDL_SetError("GLES GPU: Failed to create GL context: %s", SDL_GetError());
         }
 
         if (!GLES_LoadGLFunctions(renderer)) {
-            if (created_ctx) {
-                SDL_GL_DestroyContext(ctx);
-            }
+            SDL_GL_DestroyContext(ctx);
             return false;
         }
 
