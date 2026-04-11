@@ -378,6 +378,7 @@ dep_option(SDL_METAL               "Enable Metal support" ON "APPLE" OFF)
 set_option(SDL_OPENVR              "Use OpenVR video driver" OFF)
 dep_option(SDL_KMSDRM              "Use KMS DRM video driver" ${UNIX_SYS} "SDL_VIDEO" OFF)
 dep_option(SDL_KMSDRM_SHARED       "Dynamically load KMS DRM support" ON "SDL_KMSDRM;SDL_DEPS_SHARED" OFF)
+set_option(SDL_SDL2_BACKEND        "Use SDL2-delegating video/audio backends" OFF)
 set_option(SDL_OFFSCREEN           "Use offscreen video driver" ON)
 dep_option(SDL_DUMMYCAMERA         "Support the dummy camera driver" ON SDL_CAMERA OFF)
 option_string(SDL_BACKGROUNDING_SIGNAL "number to use for magic backgrounding signal or 'OFF'" OFF)
@@ -1349,6 +1350,14 @@ endif()
 # General SDL subsystem options, valid for all platforms
 if(SDL_AUDIO)
   # CheckDummyAudio/CheckDiskAudio - valid for all platforms
+  if(SDL_SDL2_BACKEND)
+    set(SDL_AUDIO_DRIVER_SDL2 1)
+    sdl_glob_sources(
+      "${SDL3_SOURCE_DIR}/src/audio/sdl2/*.c"
+      "${SDL3_SOURCE_DIR}/src/audio/sdl2/*.h"
+    )
+    set(HAVE_SDL_AUDIO TRUE)
+  endif()
   if(SDL_DUMMYAUDIO)
     set(SDL_AUDIO_DRIVER_DUMMY 1)
     sdl_glob_sources(
@@ -3526,6 +3535,19 @@ if(SDL_VIDEO)
     set(HAVE_OFFSCREEN TRUE)
     set(HAVE_SDL_VIDEO TRUE)
   endif()
+  if(SDL_SDL2_BACKEND)
+    set(SDL_VIDEO_DRIVER_SDL2 1)
+    sdl_glob_sources(
+      "${SDL3_SOURCE_DIR}/src/video/sdl2/*.c"
+      "${SDL3_SOURCE_DIR}/src/video/sdl2/*.h"
+    )
+    set(HAVE_SDL_VIDEO TRUE)
+    # Enable GLES2 renderer through our GL context
+    set(SDL_VIDEO_OPENGL_ES2 1)
+    set(SDL_VIDEO_OPENGL_EGL 1)
+    set(HAVE_OPENGLES TRUE)
+    set(SDL_VIDEO_RENDER_OGL_ES2 1)
+  endif()
 endif()
 
 sdl_glob_sources(${SDL3_SOURCE_DIR}/src/tray/*.c)
@@ -3553,6 +3575,14 @@ if(SDL_GPU)
       "${SDL3_SOURCE_DIR}/src/gpu/metal/*.h"
     )
     set(SDL_GPU_METAL 1)
+    set(HAVE_SDL_GPU TRUE)
+  endif()
+  if(SDL_SDL2_BACKEND)
+    sdl_glob_sources(
+      "${SDL3_SOURCE_DIR}/src/gpu/gles/*.c"
+      "${SDL3_SOURCE_DIR}/src/gpu/gles/*.h"
+    )
+    set(SDL_GPU_GLES 1)
     set(HAVE_SDL_GPU TRUE)
   endif()
   if(SDL_RENDER_GPU AND HAVE_SDL_GPU)

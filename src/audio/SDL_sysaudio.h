@@ -390,5 +390,6 @@ extern AudioBootStrap N3DSAUDIO_bootstrap;
 extern AudioBootStrap NGAGEAUDIO_bootstrap;
 extern AudioBootStrap EMSCRIPTENAUDIO_bootstrap;
 extern AudioBootStrap QSAAUDIO_bootstrap;
+extern AudioBootStrap SDL2AUDIO_bootstrap;
 
 #endif // SDL_sysaudio_h_

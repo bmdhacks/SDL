@@ -293,6 +293,8 @@
 #cmakedefine SDL_AUDIO_DRIVER_NGAGE 1
 #cmakedefine SDL_AUDIO_DRIVER_QNX 1
 
+#cmakedefine SDL_AUDIO_DRIVER_SDL2 1
+
 #cmakedefine SDL_AUDIO_DRIVER_PRIVATE 1
 
 /* Enable various input drivers */
@@ -449,6 +451,8 @@
 #cmakedefine SDL_VIDEO_DRIVER_X11_XTEST 1
 #cmakedefine SDL_VIDEO_DRIVER_QNX 1
 
+#cmakedefine SDL_VIDEO_DRIVER_SDL2 1
+
 #cmakedefine SDL_VIDEO_DRIVER_PRIVATE 1
 
 #cmakedefine SDL_VIDEO_RENDER_D3D 1
@@ -489,6 +493,8 @@
 #cmakedefine SDL_GPU_VULKAN 1
 #cmakedefine SDL_GPU_METAL 1
 #cmakedefine HAVE_GPU_OPENXR 1
+
+#cmakedefine SDL_GPU_GLES 1
 
 #cmakedefine SDL_GPU_PRIVATE 1
 

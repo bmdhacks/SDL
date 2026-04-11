@@ -1232,6 +1232,7 @@ extern SDL_GPUBootstrap VulkanDriver;
 extern SDL_GPUBootstrap D3D12Driver;
 extern SDL_GPUBootstrap MetalDriver;
 extern SDL_GPUBootstrap PrivateGPUDriver;
+extern SDL_GPUBootstrap GLESDriver;
 
 #ifdef __cplusplus
 }
