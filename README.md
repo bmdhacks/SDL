@@ -42,6 +42,7 @@ git clone https://github.com/KhronosGroup/SPIRV-Cross.git /path/to/SPIRV-Cross
 mkdir build && cd build
 cmake .. \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_FLAGS="-mcpu=cortex-a35" \
   -DSDL_SDL2_BACKEND=ON \
   -DSDL_SPIRV_CROSS_DIR=/path/to/SPIRV-Cross \
   -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_KMSDRM=OFF \
@@ -52,6 +53,17 @@ cmake .. \
   -DSDL_VULKAN=OFF -DSDL_GPU=ON -DSDL_RENDER_GPU=ON
 make -j$(nproc)
 ```
+
+**Important**: Set `-mcpu` to match your target SoC. Common embedded Linux handhelds:
+
+| SoC | CPU | Flag |
+|-----|-----|------|
+| RK3326 (r36s, RG351P, RGB10) | Cortex-A35 | `-mcpu=cortex-a35` |
+| RK3566 (RG353P, RG503) | Cortex-A55 | `-mcpu=cortex-a55` |
+| Allwinner H700 (RG35XX Plus) | Cortex-A53 | `-mcpu=cortex-a53` |
+| Amlogic S922X (RG552) | Cortex-A73/A53 | `-mcpu=cortex-a73.cortex-a53` |
+
+If you build on a more powerful aarch64 host (e.g. Apple Silicon, Ampere), the compiler defaults to the host CPU's instruction set, which includes ARMv8.1+ instructions that don't exist on older cores. Always set `-mcpu` explicitly.
 
 The key CMake options:
 
@@ -68,6 +80,7 @@ When `SDL_SDL2_BACKEND` is enabled, the native X11/Wayland/KMS video drivers, AL
 cmake .. \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE=/path/to/aarch64-toolchain.cmake \
+  -DCMAKE_C_FLAGS="-mcpu=cortex-a35" \
   -DSDL_SDL2_BACKEND=ON \
   -DSDL_SPIRV_CROSS_DIR=/path/to/SPIRV-Cross \
   -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_KMSDRM=OFF \
