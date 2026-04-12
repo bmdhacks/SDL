@@ -388,6 +388,12 @@ dep_option(SDL_HIDAPI              "Enable the HIDAPI subsystem" ON "NOT VISIONO
 dep_option(SDL_HIDAPI_LIBUSB       "Use libusb for low level joystick drivers" ON "SDL_HIDAPI;SDL_HIDAPI_LIBUSB_AVAILABLE" OFF)
 dep_option(SDL_HIDAPI_LIBUSB_SHARED "Dynamically load libusb support" ON "SDL_HIDAPI_LIBUSB;SDL_DEPS_SHARED" OFF)
 dep_option(SDL_HIDAPI_JOYSTICK     "Use HIDAPI for low level joystick drivers" ON SDL_HIDAPI OFF)
+# When using the SDL2 backend, force-disable HIDAPI joystick — our SDL2
+# joystick driver delegates to SDL2's evdev path which handles all devices.
+# HIDAPI claims devices at higher priority but can't parse generic HID reports.
+if(SDL_SDL2_BACKEND)
+  set(SDL_HIDAPI_JOYSTICK OFF CACHE BOOL "" FORCE)
+endif()
 dep_option(SDL_VIRTUAL_JOYSTICK    "Enable the virtual-joystick driver" ON SDL_HIDAPI OFF)
 set_option(SDL_LIBUDEV             "Enable libudev support" ON)
 set_option(SDL_ASAN                "Use AddressSanitizer to detect memory errors" OFF)
@@ -2097,7 +2103,18 @@ elseif(UNIX AND NOT APPLE AND NOT RISCOS AND NOT HAIKU)
     if(FREEBSD OR NETBSD OR OPENBSD OR BSDI)
       CheckUSBHID()
     endif()
-    if((LINUX OR FREEBSD) AND HAVE_LINUX_INPUT_H AND NOT ANDROID)
+    if(SDL_SDL2_BACKEND)
+      set(SDL_JOYSTICK_SDL2 1)
+      # Disable HIDAPI — our SDL2 driver delegates to SDL2's evdev path
+      # which handles all devices. HIDAPI would claim devices with higher
+      # priority but can't parse generic HID reports for many controllers.
+      set(SDL_JOYSTICK_HIDAPI 0)
+      set(SDL_HIDAPI_JOYSTICK OFF)
+      sdl_glob_sources(
+        "${SDL3_SOURCE_DIR}/src/joystick/sdl2/*.c"
+      )
+      set(HAVE_SDL_JOYSTICK TRUE)
+    elseif((LINUX OR FREEBSD) AND HAVE_LINUX_INPUT_H AND NOT ANDROID)
       set(SDL_JOYSTICK_LINUX 1)
       sdl_glob_sources(
         "${SDL3_SOURCE_DIR}/src/joystick/linux/*.c"

@@ -10,6 +10,9 @@
 #include "SDL_sdl2video.h"
 #include "SDL_sdl2opengles.h"
 
+/* SDL2 window position constant */
+#define SDL2_WINDOWPOS_CENTERED  0x2FFF0000
+
 /* SDL2 GL attribute constants (must match SDL2's values) */
 #define SDL2_GL_CONTEXT_PROFILE_MASK  21
 #define SDL2_GL_CONTEXT_MAJOR_VERSION 17
@@ -65,6 +68,36 @@ SDL_GLContext SDL2_GLES_CreateContext(SDL_VideoDevice *_this, SDL_Window *window
     if (!data || !data->sdl2_window || !SDL2_GL_CreateContext) {
         SDL_SetError("No SDL2 window for GL context creation");
         return NULL;
+    }
+
+    /* If the SDL2 window wasn't created with OPENGL (e.g. the GPU backend
+     * is claiming a window that was created without GL), recreate it with
+     * the OPENGL flag so SDL2 sets up the proper visual/EGL config. */
+    if (SDL2_GetWindowFlags) {
+        Uint32 sdl2_flags = SDL2_GetWindowFlags(data->sdl2_window);
+        if (!(sdl2_flags & SDL2_WINDOW_OPENGL)) {
+            int w = 0, h = 0;
+            if (SDL2_GetWindowSize) {
+                SDL2_GetWindowSize(data->sdl2_window, &w, &h);
+            }
+            Uint32 old_id = data->sdl2_window_id;
+            SDL2_DestroyWindow(data->sdl2_window);
+            data->sdl2_window = NULL;
+            data->sdl2_gl_context = NULL;
+
+            data->sdl2_window = SDL2_CreateWindow(
+                window->title ? window->title : "",
+                SDL2_WINDOWPOS_CENTERED, SDL2_WINDOWPOS_CENTERED,
+                w > 0 ? w : window->w, h > 0 ? h : window->h,
+                sdl2_flags | SDL2_WINDOW_OPENGL
+            );
+            if (!data->sdl2_window) {
+                SDL_SetError("Failed to recreate SDL2 window with OPENGL: %s",
+                             SDL2_GetError ? SDL2_GetError() : "unknown");
+                return NULL;
+            }
+            data->sdl2_window_id = SDL2_GetWindowID ? SDL2_GetWindowID(data->sdl2_window) : old_id;
+        }
     }
 
     /* Set GL attributes before context creation */

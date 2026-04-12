@@ -155,6 +155,12 @@ void SDL2_PumpEvents_Impl(SDL_VideoDevice *_this)
             break;
         }
     }
+
+    /* Ensure keyboard focus after processing events.  Must be AFTER the loop
+     * because FOCUS_LOST events (common on embedded/no-WM setups) clear it. */
+    if (_this->windows && !SDL_GetKeyboardFocus()) {
+        SDL_SetKeyboardFocus(_this->windows);
+    }
 }
 
 #endif /* SDL_VIDEO_DRIVER_SDL2 */

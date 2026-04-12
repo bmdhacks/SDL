@@ -22,9 +22,14 @@ bool SDL2_CreateSDLWindow(SDL_VideoDevice *_this, SDL_Window *window, SDL_Proper
     window->internal = data;
 
     /* Map SDL3 window flags to SDL2 flags.
-     * Always add OPENGL because our GLES GPU backend needs GL contexts,
-     * and on the r36s EGL is always available through libmali. */
-    Uint32 sdl2_flags = SDL2_WINDOW_SHOWN | SDL2_WINDOW_OPENGL;
+     * Only add OPENGL if the SDL3 window requests it — the GPU backend
+     * sets SDL_WINDOW_OPENGL before calling SDL_GL_CreateContext, and
+     * SDL2_GLES_CreateContext will recreate the SDL2 window with OPENGL
+     * if needed at that point. */
+    Uint32 sdl2_flags = SDL2_WINDOW_SHOWN;
+    if (window->flags & SDL_WINDOW_OPENGL) {
+        sdl2_flags |= SDL2_WINDOW_OPENGL;
+    }
     if (window->flags & SDL_WINDOW_BORDERLESS) {
         sdl2_flags |= SDL2_WINDOW_BORDERLESS;
     }

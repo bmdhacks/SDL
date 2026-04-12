@@ -248,6 +248,13 @@ static bool SDL2_VideoInit(SDL_VideoDevice *_this)
         return SDL_SetError("SDL2 not loaded");
     }
 
+    /* Pass through video driver hint to SDL2 */
+    const char *sdl2_videodriver = getenv("SDL3SHIM_SDL2_VIDEODRIVER");
+    if (sdl2_videodriver && *sdl2_videodriver) {
+        setenv("SDL_VIDEODRIVER", sdl2_videodriver, 1);
+        SDL_Log("SDL2 backend: setting SDL_VIDEODRIVER=%s", sdl2_videodriver);
+    }
+
     if (SDL2_Init(SDL2_INIT_VIDEO) < 0) {
         return SDL_SetError("SDL2_Init(VIDEO) failed: %s",
                             SDL2_GetError ? SDL2_GetError() : "unknown");

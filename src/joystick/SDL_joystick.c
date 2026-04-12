@@ -70,6 +70,9 @@ static SDL_JoystickDriver *SDL_joystick_drivers[] = {
 #ifdef SDL_JOYSTICK_WINMM
     &SDL_WINMM_JoystickDriver,
 #endif
+#ifdef SDL_JOYSTICK_SDL2
+    &SDL_SDL2_JoystickDriver,
+#endif
 #ifdef SDL_JOYSTICK_LINUX
     &SDL_LINUX_JoystickDriver,
 #endif
