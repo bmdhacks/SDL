@@ -50,6 +50,26 @@
 #define GL_FRAMEBUFFER_SRGB 0x8DB9
 #endif
 
+/* GLES 3.x PBO constants -- our backend targets GLES 3.2 minimum, but these
+ * are not in the GLES 2 core headers that this file includes. */
+#ifndef GL_PIXEL_UNPACK_BUFFER
+#define GL_PIXEL_UNPACK_BUFFER           0x88EC
+#endif
+#ifndef GL_STREAM_DRAW
+#define GL_STREAM_DRAW                   0x88E0
+#endif
+#ifndef GL_MAP_WRITE_BIT
+#define GL_MAP_WRITE_BIT                 0x0002
+#endif
+#ifndef GL_MAP_INVALIDATE_BUFFER_BIT
+#define GL_MAP_INVALIDATE_BUFFER_BIT     0x0008
+#endif
+#ifndef GL_MAP_UNSYNCHRONIZED_BIT
+#define GL_MAP_UNSYNCHRONIZED_BIT        0x0020
+#endif
+
+#define GLES2_PBO_RING_COUNT 3
+
 /*************************************************************************************************
  * Context structures                                                                            *
  *************************************************************************************************/
@@ -91,6 +111,13 @@ typedef struct
     SDL_TextureAddressMode texture_address_mode_u;
     SDL_TextureAddressMode texture_address_mode_v;
     GLES2_FBOList *fbo;
+    /* PBO streaming ring for SDL_LockTexture/SDL_UnlockTexture -- avoids
+     * driver ghost/stall on full-texture uploads each frame.  Only used for
+     * non-YUV streaming textures; YUV streaming keeps the client-side blob. */
+    GLuint pbo_ring[GLES2_PBO_RING_COUNT]; /* 0 = PBO path disabled */
+    size_t pbo_ring_size[GLES2_PBO_RING_COUNT];
+    int    pbo_ring_index;  /* most recently mapped slot */
+    bool   pbo_mapped;
 } GLES2_TextureData;
 
 typedef enum
@@ -1828,21 +1855,36 @@ static bool GLES2_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
     // Allocate a blob for image renderdata
     if (texture->access == SDL_TEXTUREACCESS_STREAMING) {
         size_t size;
+        bool use_pbo = true;
         data->pitch = texture->w * SDL_BYTESPERPIXEL(texture->format);
         size = (size_t)texture->h * data->pitch;
 #ifdef SDL_HAVE_YUV
         if (data->yuv) {
             // Need to add size for the U and V planes
             size += 2 * ((texture->h + 1) / 2) * ((data->pitch + 1) / 2);
+            use_pbo = false; // YUV streaming keeps the client-side blob
         } else if (data->nv12) {
             // Need to add size for the U/V plane
             size += 2 * ((texture->h + 1) / 2) * ((data->pitch + 1) / 2);
+            use_pbo = false;
         }
 #endif
-        data->pixel_data = SDL_calloc(1, size);
-        if (!data->pixel_data) {
-            SDL_free(data);
-            return false;
+        if (use_pbo) {
+            // PBO ring: one buffer per in-flight frame so Lock()/Unlock()
+            // can run async of the GPU.  glBufferData allocated lazily on
+            // first Lock for each slot.
+            renderdata->glGenBuffers(GLES2_PBO_RING_COUNT, data->pbo_ring);
+            if (!GL_CheckError("glGenBuffers()", renderer)) {
+                SDL_free(data);
+                return false;
+            }
+            data->pbo_ring_index = GLES2_PBO_RING_COUNT - 1; // Lock advances first
+        } else {
+            data->pixel_data = SDL_calloc(1, size);
+            if (!data->pixel_data) {
+                SDL_free(data);
+                return false;
+            }
         }
     }
 
@@ -2021,16 +2063,32 @@ static bool GLES2_UpdateTexture(SDL_Renderer *renderer, SDL_Texture *texture, co
 
     data->drawstate.texture = NULL; // we trash this state.
 
-    // Create a texture subimage with the supplied data
+    // Create a texture subimage with the supplied data.  For full-texture
+    // updates on streaming textures, use glTexImage2D (reallocation) instead
+    // of glTexSubImage2D -- this lets the driver orphan the previous backing
+    // store instead of stalling the CPU until the GPU is done sampling it.
+    // Only valid when the supplied pitch is tightly packed (glTexImage2D
+    // doesn't support arbitrary row strides without GL_UNPACK_ROW_LENGTH).
     data->glBindTexture(tdata->texture_type, tdata->texture);
-    GLES2_TexSubImage2D(data, tdata->texture_type,
-                        rect->x,
-                        rect->y,
-                        rect->w,
-                        rect->h,
-                        tdata->pixel_format,
-                        tdata->pixel_type,
-                        pixels, pitch, SDL_BYTESPERPIXEL(texture->format));
+    if (texture->access == SDL_TEXTUREACCESS_STREAMING &&
+        rect->x == 0 && rect->y == 0 &&
+        rect->w == texture->w && rect->h == texture->h &&
+        pitch == (int)(texture->w * SDL_BYTESPERPIXEL(texture->format))) {
+        data->glTexImage2D(tdata->texture_type, 0,
+                           tdata->pixel_format,
+                           rect->w, rect->h, 0,
+                           tdata->pixel_format, tdata->pixel_type,
+                           pixels);
+    } else {
+        GLES2_TexSubImage2D(data, tdata->texture_type,
+                            rect->x,
+                            rect->y,
+                            rect->w,
+                            rect->h,
+                            tdata->pixel_format,
+                            tdata->pixel_type,
+                            pixels, pitch, SDL_BYTESPERPIXEL(texture->format));
+    }
 
 #ifdef SDL_HAVE_YUV
     if (tdata->yuv) {
@@ -2179,7 +2237,37 @@ static bool GLES2_UpdateTextureNV(SDL_Renderer *renderer, SDL_Texture *texture,
 static bool GLES2_LockTexture(SDL_Renderer *renderer, SDL_Texture *texture, const SDL_Rect *rect,
                              void **pixels, int *pitch)
 {
+    GLES2_RenderData *data = (GLES2_RenderData *)renderer->internal;
     GLES2_TextureData *tdata = (GLES2_TextureData *)texture->internal;
+
+    if (tdata->pbo_ring[0]) {
+        // PBO streaming path: advance to the next ring slot, orphan it if
+        // smaller than required, then map it UNSYNCHRONIZED.  The ring of 3
+        // ensures we don't touch the slot the GPU is still DMA'ing from.
+        const size_t required = (size_t)texture->h * tdata->pitch;
+        const int slot = (tdata->pbo_ring_index + 1) % GLES2_PBO_RING_COUNT;
+
+        GLES2_ActivateRenderer(renderer);
+        data->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, tdata->pbo_ring[slot]);
+        if (tdata->pbo_ring_size[slot] < required) {
+            data->glBufferData(GL_PIXEL_UNPACK_BUFFER, (GLsizeiptr)required, NULL, GL_STREAM_DRAW);
+            tdata->pbo_ring_size[slot] = required;
+        }
+        void *mapped = data->glMapBufferRange(
+            GL_PIXEL_UNPACK_BUFFER, 0, (GLsizeiptr)required,
+            GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+        data->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        if (!mapped) {
+            return SDL_SetError("glMapBufferRange() failed");
+        }
+        tdata->pbo_ring_index = slot;
+        tdata->pbo_mapped = true;
+        *pixels = (Uint8 *)mapped +
+                  (tdata->pitch * rect->y) +
+                  (rect->x * SDL_BYTESPERPIXEL(texture->format));
+        *pitch = tdata->pitch;
+        return true;
+    }
 
     // Retrieve the buffer/pitch for the specified region
     *pixels = (Uint8 *)tdata->pixel_data +
@@ -2192,8 +2280,28 @@ static bool GLES2_LockTexture(SDL_Renderer *renderer, SDL_Texture *texture, cons
 
 static void GLES2_UnlockTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 {
+    GLES2_RenderData *data = (GLES2_RenderData *)renderer->internal;
     GLES2_TextureData *tdata = (GLES2_TextureData *)texture->internal;
     SDL_Rect rect;
+
+    if (tdata->pbo_mapped) {
+        // PBO path: unmap + glTexSubImage2D(..., (void*)0) reads from the
+        // currently-bound PIXEL_UNPACK_BUFFER at that offset, and returns as
+        // soon as the DMA is enqueued (not synchronously copied).
+        GLES2_ActivateRenderer(renderer);
+        data->drawstate.texture = NULL; // we trash this state.
+        data->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, tdata->pbo_ring[tdata->pbo_ring_index]);
+        data->glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+        data->glBindTexture(tdata->texture_type, tdata->texture);
+        data->glTexSubImage2D(tdata->texture_type, 0, 0, 0,
+                              texture->w, texture->h,
+                              tdata->pixel_format, tdata->pixel_type,
+                              (const GLvoid *)(uintptr_t)0);
+        data->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        tdata->pbo_mapped = false;
+        GL_CheckError("glTexSubImage2D(PBO)", renderer);
+        return;
+    }
 
     // We do whole texture updates, at least for now
     rect.x = 0;
@@ -2255,6 +2363,14 @@ static void GLES2_DestroyTexture(SDL_Renderer *renderer, SDL_Texture *texture)
             data->glDeleteTextures(1, &tdata->texture_u);
         }
 #endif
+        if (tdata->pbo_ring[0]) {
+            if (tdata->pbo_mapped) {
+                data->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, tdata->pbo_ring[tdata->pbo_ring_index]);
+                data->glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+                data->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            }
+            data->glDeleteBuffers(GLES2_PBO_RING_COUNT, tdata->pbo_ring);
+        }
         SDL_free(tdata->pixel_data);
         SDL_free(tdata);
         texture->internal = NULL;
