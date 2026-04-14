@@ -42,7 +42,27 @@ typedef struct SDL2_AudioSpec {
 
 static bool SDL2AUDIO_WaitDevice(SDL_AudioDevice *device)
 {
-    SDL_Delay(device->hidden->io_delay);
+    /* SDL2's queue API is non-blocking: SDL2_QueueAudio just copies bytes and
+     * returns. That makes WaitDevice the sole rate limiter for the SDL3 audio
+     * thread. A clock-based sleep (io_delay_ns) accumulates drift whenever the
+     * per-cycle sleep doesn't exactly match the hardware consumption rate —
+     * the backend drains the app's AudioStream faster than the device plays,
+     * SDL2's queued bytes grow without bound, and audio latency climbs
+     * linearly forever. Pace on the actual queue depth instead, which
+     * self-corrects against any clock/scheduling error. */
+    if (device->recording || !SDL2_GetQueuedAudioSize_ptr || !device->hidden) {
+        SDL_DelayNS(device->hidden->io_delay_ns);
+        return true;
+    }
+
+    const Uint32 high_water = device->hidden->queue_high_water;
+    while (!SDL_GetAtomicInt(&device->shutdown)) {
+        Uint32 queued = SDL2_GetQueuedAudioSize_ptr(device->hidden->sdl2_dev);
+        if (queued <= high_water) {
+            return true;
+        }
+        SDL_DelayNS(device->hidden->io_delay_ns / 2);
+    }
     return true;
 }
 
@@ -112,7 +132,11 @@ static bool SDL2AUDIO_OpenDevice(SDL_AudioDevice *device)
     }
 
     device->hidden->sdl2_dev = dev;
-    device->hidden->io_delay = ((device->sample_frames * 1000) / device->spec.freq);
+    device->hidden->io_delay_ns =
+        ((Uint64)device->sample_frames * SDL_NS_PER_SECOND) / device->spec.freq;
+    /* High-water mark: keep up to 2 buffers queued so the device never
+     * starves during a slow wake-up, but not so much that latency balloons. */
+    device->hidden->queue_high_water = (Uint32)(device->buffer_size * 2);
 
     if (!device->recording) {
         device->hidden->mixbuf_size = device->buffer_size;
