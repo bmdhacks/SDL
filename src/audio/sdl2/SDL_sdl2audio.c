@@ -176,6 +176,13 @@ static void SDL2AUDIO_Deinitialize(void)
 
 static bool SDL2AUDIO_Init(SDL_AudioDriverImpl *impl)
 {
+    /* Pass through audio driver hint to SDL2 */
+    const char *sdl2_audiodriver = getenv("SDL3SHIM_SDL2_AUDIODRIVER");
+    if (sdl2_audiodriver && *sdl2_audiodriver) {
+        setenv("SDL_AUDIODRIVER", sdl2_audiodriver, 1);
+        SDL_Log("SDL2 backend: setting SDL_AUDIODRIVER=%s", sdl2_audiodriver);
+    }
+
     /* Initialize SDL2 audio subsystem */
     if (SDL2_Init) {
         SDL2_Init(SDL2_INIT_AUDIO);

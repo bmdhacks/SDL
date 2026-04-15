@@ -100,6 +100,7 @@ make -j$(nproc)
 |----------|----------|-------------|
 | `SDL3SHIM_SDL2_LIB` | Usually | Full path to the real SDL2 shared library (e.g. `/usr/lib/libSDL2-2.0.so.0`). Required when sdl2-compat provides the system `libSDL2` to avoid circular loading. If unset, falls back to `libSDL2-2.0.so.0` via normal library search. |
 | `SDL3SHIM_SDL2_VIDEODRIVER` | No | Passed through to SDL2 as `SDL_VIDEODRIVER` before SDL2 init. Useful for selecting SDL2's video backend (e.g. `fbdev`, `kmsdrm`, `x11`). |
+| `SDL3SHIM_SDL2_AUDIODRIVER` | No | Passed through to SDL2 as `SDL_AUDIODRIVER` before SDL2 init. Useful for selecting SDL2's audio backend (e.g. `alsa`, `pulseaudio`, `pipewire`). |
 | `LD_LIBRARY_PATH` | Usually | Should include the directory containing the built `libSDL3.so` and, if built from source, the SDL2 library. |
 
 ### Example Launch Script
