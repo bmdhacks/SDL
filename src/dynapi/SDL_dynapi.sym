@@ -1286,6 +1286,10 @@ SDL3_0.0.0 {
     SDL_GDKSuspendRenderer;
     SDL_GDKResumeRenderer;
     SDL_IsPhone;
+    # sdl3forsdl2 shim escape-hatch helper. Exported under the SDL3 tag
+    # to avoid version-script ordering pitfalls (the `local: *;` catch-all
+    # below claims any symbol not explicitly listed in this block).
+    SDL3SHIM_dlsym;
     # extra symbols go here (don't modify this line)
   local: *;
 };

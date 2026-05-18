@@ -3565,6 +3565,19 @@ if(SDL_VIDEO)
     set(SDL_VIDEO_OPENGL_EGL 1)
     set(HAVE_OPENGLES TRUE)
     set(SDL_VIDEO_RENDER_OGL_ES2 1)
+
+    # Mark libSDL3 as an interposer (DF_1_INTERPOSE). When a host process
+    # also has libSDL2 in its global symbol scope — e.g. on muOS where
+    # the frontend preloads libmustage.so whose DT_NEEDED chain pulls in
+    # libSDL2 with RTLD_GLOBAL semantics — both libraries export the same
+    # SDL_* names with incompatible return conventions. With DF_1_INTERPOSE
+    # set and our constructor promoting us into the global scope (see
+    # src/video/sdl2/SDL_sdl3shim_namespace.c), glibc's ld.so puts our
+    # exports at the front of dlsym(RTLD_DEFAULT) lookups regardless of
+    # which library was loaded first.
+    if(TARGET SDL3-shared AND (LINUX OR ANDROID))
+      target_link_options(SDL3-shared PRIVATE "LINKER:-z,interpose")
+    endif()
   endif()
 endif()
 
