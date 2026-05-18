@@ -11,6 +11,7 @@
 #include "SDL_sdl2events.h"
 #include "SDL_sdl2opengles.h"
 #include "SDL_sdl2framebuffer.h"
+#include "SDL_sdl2mouse.h"
 
 #include <dlfcn.h>
 #include <stdlib.h>  /* for getenv() */
@@ -317,6 +318,10 @@ static bool SDL2_VideoInit(SDL_VideoDevice *_this)
         }
     }
 
+    /* Install the SDL2-backed mouse driver (opt-in via SDL3SHIM_ENABLE_MOUSE).
+       Failure is non-fatal: video init proceeds without cursor support. */
+    SDL2_InitMouse(_this);
+
     return true;
 }
 
@@ -328,6 +333,7 @@ static bool SDL2_SetDisplayMode(SDL_VideoDevice *_this, SDL_VideoDisplay *displa
 
 static void SDL2_VideoQuit(SDL_VideoDevice *_this)
 {
+    SDL2_QuitMouse(_this);
     if (SDL2_QuitSubSystem) {
         SDL2_QuitSubSystem(SDL2_INIT_VIDEO);
     }
