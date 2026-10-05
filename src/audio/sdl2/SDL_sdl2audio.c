@@ -37,9 +37,6 @@ typedef struct SDL2_AudioSpec {
     void *userdata;
 } SDL2_AudioSpec;
 
-/* SDL2 AUDIO_ALLOW_ANY_CHANGE */
-#define SDL2_AUDIO_ALLOW_ANY_CHANGE 0x0F
-
 static bool SDL2AUDIO_WaitDevice(SDL_AudioDevice *device)
 {
     /* SDL2's queue API is non-blocking: SDL2_QueueAudio just copies bytes and
@@ -120,9 +117,11 @@ static bool SDL2AUDIO_OpenDevice(SDL_AudioDevice *device)
     desired.callback = NULL;  /* queue-based mode */
     desired.userdata = NULL;
 
+    /* Allow no spec changes: we always queue audio in device->spec, so SDL2
+     * must convert it itself if it opened the hardware in another format. */
     Uint32 dev = (Uint32)SDL2_OpenAudioDevice_ptr(
         NULL, device->recording ? 1 : 0,
-        &desired, &obtained, SDL2_AUDIO_ALLOW_ANY_CHANGE
+        &desired, &obtained, 0
     );
 
     if (dev == 0) {
